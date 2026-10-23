@@ -4,22 +4,67 @@ Windows-local TWS / IB Gateway historical 1-minute data downloader for NQ / ES f
 
 This repository preserves the recovered original Windows Jupyter downloader (`ibkr_history_core.py`, `IBKR_NQ_ES_1min_Backfill.ipynb`) and the v1.5 watchdog (`ibkr_backfill_watchdog.py`). **It is not a Colab downloader**, does not place orders, and must not be run from GitHub Actions.
 
-## Windows quick start (Python 3.11)
+## Safe migration: reuse existing history without any IBKR download
 
-1. Open TWS or IB Gateway on the **same Windows desktop**, log in, enable read-only API, and verify the correct socket port. The recovered Notebook defaults to **127.0.0.1:7496** (commonly TWS live, not universal).
-2. In Windows PowerShell:
+**Version note (2026-10-23):** The committed \`ibkr_history_core.py\` is the recovered **Windows v1.4** (not v1.5). The committed watchdog is v1.5; the notebook is the older original. The separate true v1.5 core was observed on the user's Windows desktop but has not yet been imported to this repository. Do not use this checkout as a verified v1.5 replacement, and **do not run its full backfill against original history**. The copy/verification utility below is independent of core version, imports no IBKR libraries, and does not require installing packages.
 
-```powershell
+The original data is stored here on the user's Windows machine:
+
+\`\`\`text
+C:\Users\hh483\Downloads\00 量化交易研究\05 IBKR 測試\IBKR_MarketData_1min_Backfill_v1_1\IBKR_MarketData
+\`\`\`
+
+Older Windows versions v1.3–v1.5 also refer to this same original data path. The location under \`v1_1\` **does not mean that the dataset only belongs to v1.1**.
+
+First clone the repository into a **separate** program directory. In **Anaconda Prompt**, with existing \`py311\` (no installation needed to copy files):
+
+\`\`\`bat
+conda activate py311
+cd /d "%USERPROFILE%\Documents"
 git clone https://github.com/hh4832/IBKR-market-data-download.git
 cd IBKR-market-data-download
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-jupyter notebook IBKR_NQ_ES_1min_Backfill.ipynb
-```
+mkdir "%USERPROFILE%\Documents\IBKR_Data_Sandbox"
+\`\`\`
 
-3. Configure `cfg.host`, `cfg.port`, `cfg.client_id`, `DATA_ROOT`, and optional Google Drive **for desktop local sync path**. Use your **existing** `DATA_ROOT` to resume earlier checkpoint files. A Drive folder link alone is not a Windows filesystem path.
-4. Start `smoke_test=True`; then explicitly set `RUN_FULL=True` after checking connectivity and market-data permissions. Read `requests.jsonl`, `checkpoint.json`, `reports/` and chunk files after each run.
+If already cloned, use \`cd /d "%USERPROFILE%\Documents\IBKR-market-data-download"\` and \`git pull --ff-only\` rather than cloning again.
+
+**Preview (no file writes):**
+
+\`\`\`bat
+python copy_existing_history.py --source "C:\Users\hh483\Downloads\00 量化交易研究\05 IBKR 測試\IBKR_MarketData_1min_Backfill_v1_1\IBKR_MarketData" --dest "C:\Users\hh483\Documents\IBKR_Data_Sandbox\IBKR_MarketData"
+\`\`\`
+
+Check that the source, target, number of files and bytes match expectations, that the old downloader is stopped, and that there is sufficient free disk space. Then **explicitly** copy, with per-file SHA256 verification before the target directory becomes visible:
+
+\`\`\`bat
+python copy_existing_history.py --source "C:\Users\hh483\Downloads\00 量化交易研究\05 IBKR 測試\IBKR_MarketData_1min_Backfill_v1_1\IBKR_MarketData" --dest "C:\Users\hh483\Documents\IBKR_Data_Sandbox\IBKR_MarketData" --execute
+\`\`\`
+
+You can independently recheck both folders afterward:
+
+\`\`\`bat
+python copy_existing_history.py --source "C:\Users\hh483\Downloads\00 量化交易研究\05 IBKR 測試\IBKR_MarketData_1min_Backfill_v1_1\IBKR_MarketData" --dest "C:\Users\hh483\Documents\IBKR_Data_Sandbox\IBKR_MarketData" --verify-only
+\`\`\`
+
+Or open the UI-like notebook \`jupyter notebook IBKR_HISTORY_COPY.ipynb\` and edit two Windows paths. Its \`COPY_NOW=False\` default means running all cells **does not copy or download anything**.
+
+The tool copies **all files and empty directories** under the dataset, including each \`raw/<symbol>/<contract>/chunks/\`, \`consolidated.parquet\`, \`requests.jsonl\`, \`checkpoint.json\`, monitors, coverage reports, \`download_plan.csv\`, \`run_summary.csv\`, \`contract_discovery.csv\` and \`head_timestamp_cache.json\`. It refuses existing destinations (even empty ones), nested paths, symlinks/junctions within the dataset and special files. It writes only a temporary staging folder under the destination's parent, verifies file sizes and SHA256 against the original, and renames it to the final destination on success. If source files change during the operation, the operation fails. **Stop all existing downloading and syncing jobs during the snapshot.**
+
+The snapshot reuses already downloaded bytes and checkpoint state: it does **not** correct old missing minutes, roll contract gaps, or faulty checkpoint logic. Set a future updated downloader's \`DATA_ROOT\` **explicitly** to \`C:\Users\hh483\Documents\IBKR_Data_Sandbox\IBKR_MarketData\` only after verifying that its core and notebook are version-consistent and after creating an independent \`ibkr_dl_311\` Conda environment. Do not start a full download on that copy until the gap repair plan is approved.
+
+## Windows downloader environment (when version-matched core is ready)
+
+Run TWS or IB Gateway on the **same Windows computer**. Port \`127.0.0.1:7496\` in the original Notebook is a configurable example, not proof the selected TWS mode is live or paper. A separate Conda environment is safer because existing \`py311\` has pandas 3.x / pyarrow 26, outside current repository constraints.
+
+\`\`\`bat
+conda create -n ibkr_dl_311 python=3.11 pip
+conda activate ibkr_dl_311
+cd /d "%USERPROFILE%\Documents\IBKR-market-data-download"
+python -m pip install -r requirements.txt
+python -m pip check
+\`\`\`
+
+The original \`IBKR_NQ_ES_1min_Backfill.ipynb\` is preserved for historical reference and includes **actual smoke-download operations**. Never use Run All on it without reviewing the paths, client ID, and write behavior.
 
 ### Data quality finding (2026-10-23)
 

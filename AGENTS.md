@@ -20,3 +20,9 @@
 ## Separate concerns
 - Download (this repo): hh4832/IBKR-market-data-download.
 - QA: hh4832/IBKR-market-data-cleaning-pipeline. Do not copy or modify QA data and outputs in downloader.
+
+
+## Existing history snapshot / source preservation
+- \`copy_existing_history.py\` is **standard-library-only**, standalone read-only preview by default. Actual copy must require \`--execute\`, nonexistent destination, a staging copy, and SHA256 verification. No merge/overwrite of any existing dataset, no downloader/network imports.
+- \`IBKR_HISTORY_COPY.ipynb\` must keep \`COPY_NOW=False\`, \`VERIFY_ONLY=False\` as defaults. Its purpose is safe historical data copying only, not live TWS operations.
+- As of 2026-10-23, GitHub \`ibkr_history_core.py\` is **Windows v1.4**; Windows true v1.5 is a separate larger file. Never label the GitHub core v1.5 before importing real v1.5 from the authorized machine and tests.

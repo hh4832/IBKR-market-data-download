@@ -86,7 +86,7 @@ def test_verify_detects_same_size_tamper(dataset):
     src,dest=dataset
     copy_snapshot(src,dest)
     file=dest/"raw"/"NQ"/"NQZ6_123"/"consolidated.parquet"
-    file.write_bytes(b"PArque")
+    file.write_bytes(b"PARQUET")
     with pytest.raises(SnapshotError,match="SHA256 mismatch"):
         verify_snapshot(src,dest)
 

@@ -48,3 +48,16 @@ raw/
 *.jsonl
 *.log
 offline_audit_results/
+
+# Private recovery plans, runtime reports and local snapshots
+**/run_*/
+**/recovery_plan.json
+**/batch_plan.json
+**/test_plan.json
+**/held_windows.json
+**/execution.lock
+NQ_Recovery/
+ES_Recovery/
+NQ_Stage_Reports/
+ES_Test_Reports/
+IBKR_NQ_Snapshot*/

@@ -2,11 +2,35 @@
 
 Windows-local TWS / IB Gateway historical 1-minute data downloader for NQ / ES futures and TSM / SOXX US stocks.
 
+## Staged / overnight NQ + ES recovery
+
+The local runner now supports both symbols in one sequential, bounded workflow:
+
+```bat
+conda activate ibkr_dl_311
+python -B IBKR_staged_recovery.py --auto --market BOTH
+python -B IBKR_staged_recovery.py --auto --market BOTH --execute --max-hours 8 --max-batches 30
+```
+
+The first command is preview only; the second connects to TWS. Run from this repo
+after creating/verifying a separate history snapshot. NQ and ES share pacing and
+the total time budget; outputs remain separate. Previously recovered minutes are
+subtracted each batch. Partial/error results stop unattended progression for review.
+See [setup, stages, sleep prevention, interruption and residual QC](docs/STAGED_RECOVERY.md).
+
+## NQ/ES partial-window fix and separate recovery
+
+The demonstrated 60/120-bar midnight-window bug now fails closed before the
+checkpoint advances. NQ/ES requests use explicit elapsed seconds; existing holes
+need an independent, calendar-reviewed recovery plan, not a checkpoint reset.
+See [evidence, intentional v1.5 changes, preview and bounded recovery](docs/NQ_RECOVERY.md).
+The live comparison/probe is pending; keep the repair under review before bulk use.
+
 This repository preserves the recovered original Windows Jupyter downloader (`ibkr_history_core.py`, `IBKR_NQ_ES_1min_Backfill.ipynb`) and the v1.5 watchdog (`ibkr_backfill_watchdog.py`). **It is not a Colab downloader**, does not place orders, and must not be run from GitHub Actions.
 
 ## Safe migration: reuse existing history without any IBKR download
 
-**Version note (2026-10-24):** The core is now the true Windows v1.5 (53,345 bytes), imported byte-for-byte from the authorized local source. The watchdog already matches that source. The older notebook remains for reference; use `IBKR_NQ_ES_TSM_SOXX_1min_Backfill_v1_5.ipynb` for the matching settings. Source hashes and intentional notebook changes are in [v1.5 import record](docs/V15_IMPORT.md). No market data is included or modified.
+**Version note (2026-10-24):** The baseline core was the true Windows v1.5 (53,345 bytes), imported byte-for-byte from the authorized local source. The window-quality fix above is an intentional subsequent change documented in [NQ recovery](docs/NQ_RECOVERY.md). The watchdog still matches the import. The older notebook remains for reference; use `IBKR_NQ_ES_TSM_SOXX_1min_Backfill_v1_5.ipynb` for matching settings. Historical source hashes and notebook changes remain in the [v1.5 import record](docs/V15_IMPORT.md). No market data is included or modified.
 
 The original data is stored here on the user's Windows machine:
 

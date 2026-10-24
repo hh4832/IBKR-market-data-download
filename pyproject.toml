@@ -21,7 +21,7 @@ notebook = ["ipykernel>=6,<8", "notebook>=7,<8", "ipywidgets>=8,<9"]
 dev = ["pytest>=8,<10"]
 
 [tool.setuptools]
-py-modules = ["ibkr_history_core", "ibkr_backfill_watchdog", "ibkr_backfill_audit"]
+py-modules = ["ibkr_history_core", "ibkr_backfill_watchdog", "ibkr_backfill_audit", "ibkr_window_quality", "ibkr_history_recovery"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

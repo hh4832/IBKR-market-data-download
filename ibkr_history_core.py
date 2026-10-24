@@ -8,7 +8,7 @@ import asyncio
 import calendar
 from collections import deque
 from dataclasses import dataclass, asdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, time as dtime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 import json
@@ -60,6 +60,11 @@ class Settings:
     # to a deliberately conservative calendar floor and mark coverage UNVERIFIED.
     equity_head_required: bool = False
     equity_fallback_year: int = 1990
+    # Cap stock/ETF/index research to most recent N calendar years even if IBKR head is older.
+    equity_lookback_years: Optional[int] = 10
+    # pre_expiry_session prevents expired quarterly futures from getting stuck on
+    # the often-unavailable final settlement session; excluded windows are recorded.
+    expired_future_end_policy: str = "pre_expiry_session"  # or calendar_expiry
     show_progress: bool = True
     # A single unavailable/ambiguous contract window must not abort other contracts.
     # Original cursor/checkpoint is retained and the contract is marked for review.
@@ -93,6 +98,10 @@ class Settings:
             raise ValueError("Refresh and smoke periods must be positive")
         if self.equity_empty_weekdays_to_stop < 3:
             raise ValueError("equity_empty_weekdays_to_stop must be >=3")
+        if self.equity_lookback_years is not None and self.equity_lookback_years < 1:
+            raise ValueError("equity_lookback_years must be >=1 or None")
+        if self.expired_future_end_policy not in {"pre_expiry_session", "calendar_expiry"}:
+            raise ValueError("expired_future_end_policy must be pre_expiry_session or calendar_expiry")
         if self.equity_head_cache_days < 1:
             raise ValueError("equity_head_cache_days must be >=1")
         if not (1900 <= self.equity_fallback_year <= utc_now().year):
@@ -203,6 +212,31 @@ def future_last_trade_window_end_utc(last_trading_day: date) -> datetime:
     return datetime.combine(last_trading_day + timedelta(days=1), datetime.min.time(), UTC)
 
 
+
+def equity_lookback_floor(now: datetime, years: Optional[int]) -> Optional[datetime]:
+    """Inclusive UTC calendar date N years ago; None means no explicit lookback."""
+    if years is None:
+        return None
+    day = now.date()
+    try:
+        floor = day.replace(year=day.year - years)
+    except ValueError:  # Feb 29 -> Feb 28 in a non-leap year
+        floor = day.replace(year=day.year - years, day=28)
+    return datetime.combine(floor, dtime.min, UTC)
+
+
+def pre_expiry_session_end_utc(last_trading_day: date) -> datetime:
+    """End of the last *complete* standard Globex session before final expiry day.
+
+    The final expiry session is deliberately omitted in this conservative research
+    policy. No claim is made that the excluded period had zero bars. A separate
+    last-session probe is required if research needs the exact expiration day.
+    """
+    prev = last_trading_day - timedelta(days=1)
+    while prev.weekday() >= 5:  # conservative weekend-only predecessor
+        prev -= timedelta(days=1)
+    return datetime.combine(prev, dtime(16, 0), ZoneInfo("America/Chicago")).astimezone(UTC)
+
 def build_download_plan(contracts: list, settings: Settings, now: Optional[datetime] = None) -> pd.DataFrame:
     """Per-contract bounded windows. roll_window preserves overlapping raw contracts.
     It does NOT create/adjust a continuous futures series or declare a roll date.
@@ -219,12 +253,19 @@ def build_download_plan(contracts: list, settings: Settings, now: Optional[datet
                              if prior_expiry else expiry - timedelta(days=settings.first_contract_days))
             else:
                 start_day = expiry - timedelta(days=settings.full_contract_max_days)
-            end_dt = min(most_recent_futures_trading_end_utc(now),
-                         future_last_trade_window_end_utc(expiry))
+            settlement_end = future_last_trade_window_end_utc(expiry)
+            is_expired = expiry < now.date()
+            skip_terminal = is_expired and settings.expired_future_end_policy == "pre_expiry_session"
+            cap_end = pre_expiry_session_end_utc(expiry) if skip_terminal else settlement_end
+            end_dt = min(most_recent_futures_trading_end_utc(now), cap_end)
             start_dt = datetime.combine(start_day, datetime.min.time(), UTC)
             rows.append(dict(symbol=symbol, localSymbol=c.localSymbol, conId=int(c.conId),
                              expiry=expiry.isoformat(), contract=c, start_utc=start_dt,
-                             end_utc=end_dt, eligible=start_dt < end_dt))
+                             end_utc=end_dt, eligible=start_dt < end_dt,
+                             terminal_policy=("pre_expiry_session_EXCLUDES_FINAL_SESSION" if skip_terminal
+                                              else "calendar_expiry_or_unexpired"),
+                             terminal_excluded_start_utc=(cap_end if skip_terminal else pd.NaT),
+                             terminal_excluded_end_utc=(settlement_end if skip_terminal else pd.NaT)))
             prior_expiry = expiry
     return pd.DataFrame(rows)
 
@@ -802,10 +843,19 @@ async def build_cash_plan(ib, contracts: list, settings: Settings, now: Optional
                 head_cache[cache_key] = dict(start_utc=start.isoformat(),
                     checked_at_utc=now.isoformat(), head_source=head_source, head_error=head_error)
                 atomic_json(head_cache_path, head_cache)
+        lookback = equity_lookback_floor(now, settings.equity_lookback_years)
+        if lookback is not None:
+            original_start = start
+            start = max(start, lookback)
+            if original_start < lookback:
+                print(f"{c.symbol}: limiting planned history to last "
+                      f"{settings.equity_lookback_years} years from {lookback.date()} "
+                      f"(IBKR head source: {head_source})", flush=True)
         rows.append(dict(symbol=c.symbol, localSymbol=c.localSymbol or c.symbol,
                          conId=int(c.conId), expiry="", contract=c, start_utc=start,
                          end_utc=completed_session_end, eligible=start < completed_session_end,
-                         head_source=head_source, head_error=head_error))
+                         head_source=head_source, head_error=head_error,
+                         lookback_years=settings.equity_lookback_years))
     return pd.DataFrame(rows)
 
 
@@ -903,6 +953,16 @@ async def run_backfill(ib, settings: Settings) -> tuple[pd.DataFrame, pd.DataFra
     plan, skipped_plan = filter_eligible_plan(plan_all)
     readable = plan.drop(columns=["contract"]).copy()
     readable.to_csv(root / "download_plan.csv", index=False)
+    if "terminal_policy" in readable.columns:
+        terminal = readable.loc[
+            readable["terminal_policy"] == "pre_expiry_session_EXCLUDES_FINAL_SESSION",
+            ["symbol", "localSymbol", "expiry", "terminal_excluded_start_utc", "terminal_excluded_end_utc"]
+        ]
+        terminal.to_csv(root / "excluded_expiry_terminal_windows.csv", index=False)
+        if len(terminal):
+            print(f"NOTE: {len(terminal)} expired futures exclude final expiry session. "
+                  "See excluded_expiry_terminal_windows.csv. These are NOT confirmed complete.",
+                  flush=True)
     if not skipped_plan.empty:
         skipped_plan.drop(columns=["contract"]).to_csv(root / "skipped_future_start_plans.csv", index=False)
     print(f"Contracts resolved: {len(plan_all)}; actionable windows: {len(plan)}; "
@@ -936,7 +996,10 @@ async def run_backfill(ib, settings: Settings) -> tuple[pd.DataFrame, pd.DataFra
                 ib, row, root, settings, pacer, budget,
                 tqdm if settings.show_progress else None)
             report = reports_for_contract(contract_folder(root, row["contract"]))
-            results.append({**res, **report})
+            results.append({**res, **report,
+                            "coverage_notice": (row.get("terminal_policy", "")
+                                if row.get("terminal_policy", "") ==
+                                   "pre_expiry_session_EXCLUDES_FINAL_SESSION" else "")})
             # Keep completed result logs even if a later contract fails or budget stops.
             pd.DataFrame(results).to_csv(root / "run_summary.csv", index=False)
             if settings.google_drive_dir:

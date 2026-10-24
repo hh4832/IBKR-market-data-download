@@ -6,4 +6,5 @@ tqdm>=4.66,<5
 ipython>=8,<10
 ipykernel>=6,<8
 notebook>=7,<8
+ipywidgets>=8,<9
 tzdata>=2024.1

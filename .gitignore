@@ -5,6 +5,7 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .pytest_cache/
+.test-temp*/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/

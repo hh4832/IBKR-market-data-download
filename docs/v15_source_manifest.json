@@ -1,0 +1,37 @@
+{
+  "import_date": "2026-10-24",
+  "source_directory": "C:\\Users\\hh483\\Downloads\\00 量化交易研究\\05 IBKR 測試\\IBKR_MarketData_1min_Backfill_v1_5",
+  "baseline_commit": "434a6d5",
+  "files": [
+    {
+      "name": "ibkr_history_core.py",
+      "bytes": 53345,
+      "sha256": "a7566d473e984807514b81f3e99d59393d5c81276d9c76bcba58ce62ea7b3630"
+    },
+    {
+      "name": "ibkr_backfill_watchdog.py",
+      "bytes": 10232,
+      "sha256": "eea56fcba940848e278de3a5ec4202f0b15fe4ce2d4e37d5fb8b17f3c52c3733"
+    },
+    {
+      "name": "IBKR_NQ_ES_TSM_SOXX_1min_Backfill_v1_5.ipynb",
+      "bytes": 578110,
+      "sha256": "2385fe3ca16e7e08f1068d855c281033d802e22b0ca50b2ed06121bf15df4c79"
+    },
+    {
+      "name": "test_ibkr_history_core.py",
+      "bytes": 27352,
+      "sha256": "2b5fc79478ec6f57f2658570abb0cfacce7f92e52ee1a86d7b3288d273b386d8"
+    },
+    {
+      "name": "README.md",
+      "bytes": 4917,
+      "sha256": "c6ae4911fcbe9d6ee942e41aed12e7c61564b3ae2767a59c5d3ec90c461348eb"
+    },
+    {
+      "name": "requirements.txt",
+      "bytes": 77,
+      "sha256": "28761f1e2948bf8ddd30e495fe43fa365fb5199ac9bcf00e463be1ac92d485a3"
+    }
+  ]
+}

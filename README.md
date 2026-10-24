@@ -2,6 +2,22 @@
 
 Windows-local TWS / IB Gateway historical 1-minute data downloader for NQ / ES futures and TSM / SOXX US stocks.
 
+## Staged / overnight NQ + ES recovery
+
+The local runner now supports both symbols in one sequential, bounded workflow:
+
+```bat
+conda activate ibkr_dl_311
+python -B IBKR_staged_recovery.py --auto --market BOTH
+python -B IBKR_staged_recovery.py --auto --market BOTH --execute --max-hours 8 --max-batches 30
+```
+
+The first command is preview only; the second connects to TWS. Run from this repo
+after creating/verifying a separate history snapshot. NQ and ES share pacing and
+the total time budget; outputs remain separate. Previously recovered minutes are
+subtracted each batch. Partial/error results stop unattended progression for review.
+See [setup, stages, sleep prevention, interruption and residual QC](docs/STAGED_RECOVERY.md).
+
 ## NQ/ES partial-window fix and separate recovery
 
 The demonstrated 60/120-bar midnight-window bug now fails closed before the

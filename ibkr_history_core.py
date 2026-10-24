@@ -18,6 +18,7 @@ import time
 from typing import Optional
 
 import pandas as pd
+from ibkr_window_quality import assess_window, IncompleteWindowError
 
 UTC = timezone.utc
 BAR_COLUMNS = ["timestamp_utc", "open", "high", "low", "close", "volume", "average", "barCount",
@@ -526,6 +527,10 @@ async def request_one_day(ib, c, end: datetime, pacer: HistoryPacer,
     low = end - timedelta(days=1)
     last_error = None
     all_errors: list[dict] = []
+    futures_window = c.symbol in {"NQ", "ES"} and getattr(c, "secType", "FUT") == "FUT"
+    # Explicit elapsed seconds avoid relying on calendar/session '1 D' semantics.
+    # This transport change still requires the documented single-date live probe.
+    duration = "86400 S" if futures_window else "1 D"
     for attempt in range(1, settings.max_retries + 1):
         await pacer.wait()
         events = []
@@ -534,7 +539,7 @@ async def request_one_day(ib, c, end: datetime, pacer: HistoryPacer,
         ib.errorEvent += record
         try:
             bars = await ib.reqHistoricalDataAsync(
-                c, endDateTime=end, durationStr="1 D", barSizeSetting="1 min",
+                c, endDateTime=end, durationStr=duration, barSizeSetting="1 min",
                 whatToShow="TRADES", useRTH=False, formatDate=2,
                 keepUpToDate=False, timeout=settings.timeout_seconds)
         except Exception as exc:
@@ -550,11 +555,23 @@ async def request_one_day(ib, c, end: datetime, pacer: HistoryPacer,
             df = bars_to_frame(bars, c)
             df = df[(df.timestamp_utc >= pd.Timestamp(low)) &
                     (df.timestamp_utc < pd.Timestamp(end))].copy()
+            if futures_window:
+                assessment = assess_window(df, low, end)
+                if assessment["suspicious"]:
+                    # Preserve neither a misleading completed chunk nor a cursor
+                    # advance. Holidays may trigger review; do not invent bars.
+                    raise IncompleteWindowError(
+                        f"Unresolved futures window {c.localSymbol} {low} -> {end}: "
+                        f"{json.dumps(assessment)}; checkpoint unchanged")
             return df, all_errors, attempt
         # Explicit HMDS 'no data' / expected closed market session can return empty.
         no_data = any(any(mark in x["message"].lower() for mark in (
             "no data", "no historical market data", "no historical data")) for x in events)
         if not fatal and no_data:
+            if futures_window and assess_window(bars_to_frame([], c), low, end)["suspicious"]:
+                raise IncompleteWindowError(
+                    f"Unverified no-data futures window {c.localSymbol} {low} -> {end}; "
+                    "check holiday/expiry/permissions before resuming; checkpoint unchanged")
             return bars_to_frame([], c), all_errors, attempt
         # Blank responses without errors are ambiguous; retry, then checkpoint as unresolved only if fatal absent.
         if attempt < settings.max_retries:
@@ -611,7 +628,9 @@ async def backfill_one_contract(ib, plan_row, root: Path, settings: Settings,
                            f" but settings use {settings.coverage_mode}. Choose a new DATA_ROOT.")
     if cursor <= stop:
         return dict(symbol=c.symbol, localSymbol=getattr(c, "localSymbol", "") or c.symbol,
-                    conId=c.conId, status="already_complete", requests=0, new_rows=0)
+                    conId=c.conId, status="already_complete", requests=0, new_rows=0,
+                    coverage_verified=False,
+                    coverage_notice="Cursor exhausted only; audit existing chunks and use independent recovery plan")
     requested = 0
     skipped_closed = 0
     new_rows = 0
@@ -659,7 +678,12 @@ async def backfill_one_contract(ib, plan_row, root: Path, settings: Settings,
                 start_utc=(cursor - timedelta(days=1)).isoformat(), rows=len(frame),
                 status=("weekly_closed_unqueried" if weekly_closed
                         else "ok" if len(frame) else "no_data_reported"),
-                attempts=attempts, errors=errors))
+                attempts=attempts, errors=errors,
+                request_duration=("86400 S" if c.symbol in {"NQ", "ES"} else "1 D"),
+                first_bar_utc=(frame.timestamp_utc.min().isoformat() if len(frame) else None),
+                last_bar_utc=(frame.timestamp_utc.max().isoformat() if len(frame) else None),
+                coverage_check=(assess_window(frame, cursor-timedelta(days=1), cursor)
+                                if c.symbol in {"NQ", "ES"} else None)))
             if not weekly_closed:
                 requested += 1
             if heuristic_active:

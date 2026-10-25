@@ -122,3 +122,8 @@ Market-data usage and redistribution remain subject to IBKR/exchange permissions
 - The v1.5 notebook has cleared outputs, no automatic installation, a separate snapshot path and `ALLOW_CONNECT=False`, `ALLOW_DOWNLOAD=False`. Review the unlimited monitored-run cell before opting in. Do not run against original history.
 - Existing py311 was inspected and used without changing installed packages. Its pandas 3 / pyarrow 26 are outside the supported requirements; local results on that environment are supplementary to the Python 3.11 CI run using pandas 2.
 - An isolated local Python 3.11 environment with pandas 2.3.3 / pyarrow 24 passed 66 offline tests; one Windows symlink test was skipped for OS permissions. See the import record for validation details.
+
+
+## 驗證後資料與私人雲端備份
+
+請見 [驗證後資料、缺口證據與備份操作](docs/VALIDATED_DATA_BACKUP.md)。新增 `verified_backup.py`（預覽為預設，明確 `--execute` 才建立 SHA256 驗證 ZIP）及 `ibkr_gap_evidence.py`（離線判讀 forward historical TRADES tick 證據，僅限 IB 來源口徑）。行情、日誌、checkpoint 和私人計畫留在私人備份，不放 GitHub。GitHub CI 只驗證程式，不能驗證本機私人行情。

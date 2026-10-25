@@ -61,3 +61,17 @@ ES_Recovery/
 NQ_Stage_Reports/
 ES_Test_Reports/
 IBKR_NQ_Snapshot*/
+
+# Private validated bundles, evidence and generated reports
+*.zip
+*.receipt.json
+cloud_backup*/
+gap_resolution_*/
+validation_*/
+IBKR_NQ_ES_integrated*/
+**/BACKUP_MANIFEST.json
+**/latest_resolution_*.json
+**/policy_manifest.json
+**/evidence_manifest.json
+**/context_probe_*/
+**/tick_probe_*/
